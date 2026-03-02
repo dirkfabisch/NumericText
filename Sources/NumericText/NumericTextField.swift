@@ -1,6 +1,11 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// A `TextField` replacement that limits user input to numbers.
+/// On iOS this uses a `UITextField` under the hood so the cursor
+/// is always placed at the end of the text when the field receives focus.
 public struct NumericTextField: View {
 
     /// This is what consumers of the text field will access
@@ -10,6 +15,7 @@ public struct NumericTextField: View {
     private let numberFormatter: NumberFormatter
 
     private let title: LocalizedStringKey
+    private let titleString: String
     private let onEditingChanged: (Bool) -> Void
     private let onCommit: () -> Void
 
@@ -32,40 +38,111 @@ public struct NumericTextField: View {
                 onCommit: @escaping () -> Void = {}
     ) {
         _number = number
-        
+
         self.numberFormatter = numberFormatter ?? decimalNumberFormatter
         self.isDecimalAllowed = isDecimalAllowed
-        
+
         if let number = number.wrappedValue, let string = self.numberFormatter.string(from: number) {
             _string = State(initialValue: string)
         } else {
             _string = State(initialValue: "")
         }
-        
+
         title = titleKey
+        // Mirror the LocalizedStringKey to get a plain string for the placeholder
+        self.titleString = "\(titleKey)".replacingOccurrences(of: "LocalizedStringKey(key: \"", with: "").replacingOccurrences(of: "\", hasFormatting: false, arguments: [])", with: "")
         self.onEditingChanged = onEditingChanged
         self.onCommit = onCommit
     }
 
     public var body: some View {
+        #if os(iOS)
+        NumericUITextField(
+            text: $string,
+            placeholder: titleString,
+            isDecimalAllowed: isDecimalAllowed,
+            onEditingChanged: onEditingChanged,
+            onCommit: onCommit
+        )
+        .numericText(text: $string, number: $number, isDecimalAllowed: isDecimalAllowed, numberFormatter: numberFormatter)
+        #else
         TextField(title, text: $string, onEditingChanged: onEditingChanged, onCommit: onCommit)
             .numericText(text: $string, number: $number, isDecimalAllowed: isDecimalAllowed, numberFormatter: numberFormatter)
-            .modifier(KeyboardModifier(isDecimalAllowed: isDecimalAllowed))
-    }
-}
-
-private struct KeyboardModifier: ViewModifier {
-    let isDecimalAllowed: Bool
-
-    func body(content: Content) -> some View {
-        #if os(iOS)
-        return content
-            .keyboardType(isDecimalAllowed ? .decimalPad : .numberPad)
-        #else
-        return content
         #endif
     }
 }
+
+// MARK: - UIViewRepresentable (iOS only)
+
+#if os(iOS)
+/// A `UIViewRepresentable` wrapper around `UITextField` that places the cursor
+/// at the end of the text whenever the field becomes the first responder.
+struct NumericUITextField: UIViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    var isDecimalAllowed: Bool
+    var onEditingChanged: (Bool) -> Void
+    var onCommit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIView(context: Context) -> UITextField {
+        let textField = UITextField()
+        textField.delegate = context.coordinator
+        textField.placeholder = placeholder
+        textField.keyboardType = isDecimalAllowed ? .decimalPad : .numberPad
+        textField.textAlignment = .right
+        textField.text = text
+        textField.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        textField.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
+
+        return textField
+    }
+
+    func updateUIView(_ uiView: UITextField, context: Context) {
+        // Only update when the SwiftUI state differs from what the UITextField shows
+        // to avoid cursor jumps during editing
+        if uiView.text != text {
+            uiView.text = text
+        }
+    }
+
+    class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: NumericUITextField
+
+        init(_ parent: NumericUITextField) {
+            self.parent = parent
+        }
+
+        @objc func textChanged(_ textField: UITextField) {
+            parent.text = textField.text ?? ""
+        }
+
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            parent.onEditingChanged(true)
+            // Move cursor to end
+            DispatchQueue.main.async {
+                let endPosition = textField.endOfDocument
+                textField.selectedTextRange = textField.textRange(from: endPosition, to: endPosition)
+            }
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            parent.onEditingChanged(false)
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            parent.onCommit()
+            textField.resignFirstResponder()
+            return true
+        }
+    }
+}
+#endif
 
 struct NumericTextField_Previews: PreviewProvider {
     @State private static var int: NSNumber?
@@ -74,10 +151,10 @@ struct NumericTextField_Previews: PreviewProvider {
     static var previews: some View {
         VStack {
             NumericTextField("Int", number: $int, isDecimalAllowed: false)
-                .border(/*@START_MENU_TOKEN@*/Color.black/*@END_MENU_TOKEN@*/, width: /*@START_MENU_TOKEN@*/1/*@END_MENU_TOKEN@*/)
+                .border(Color.black, width: 1)
                 .padding()
             NumericTextField("Double", number: $double, isDecimalAllowed: true)
-                .border(/*@START_MENU_TOKEN@*/Color.black/*@END_MENU_TOKEN@*/, width: /*@START_MENU_TOKEN@*/1/*@END_MENU_TOKEN@*/)
+                .border(Color.black, width: 1)
                 .padding()
         }
     }
