@@ -95,8 +95,14 @@ struct NumericUITextField: UIViewRepresentable {
         textField.keyboardType = isDecimalAllowed ? .decimalPad : .numberPad
         textField.textAlignment = .right
         textField.text = text
-        textField.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+
+        // Allow the field to expand horizontally to fill available space
+        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        // Prevent the field from collapsing vertically
+        textField.setContentHuggingPriority(.required, for: .vertical)
+        textField.setContentCompressionResistancePriority(.required, for: .vertical)
 
         textField.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
 
