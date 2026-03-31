@@ -118,8 +118,8 @@ struct NumericUITextField: UIViewRepresentable {
             action: #selector(Coordinator.dismissKeyboard)
         )
         toolbar.items = [spacer, doneButton]
-        // Match SwiftUI's .foregroundStyle(.secondary) for keyboard toolbar buttons
-        toolbar.tintColor = .secondaryLabel
+        // Match SwiftUI's ToolbarItemGroup(placement: .keyboard) button style
+        doneButton.tintColor = .label.withAlphaComponent(0.35)
         textField.inputAccessoryView = toolbar
 
         return textField
