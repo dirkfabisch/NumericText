@@ -18,7 +18,6 @@ public struct NumericTextField: View {
     private let titleString: String
     private let onEditingChanged: (Bool) -> Void
     private let onCommit: () -> Void
-    private let toolbarTintColor: Color?
 
     /// Creates a text field with a text label generated from a localized title string.
     ///
@@ -28,7 +27,6 @@ public struct NumericTextField: View {
     ///   - number: The number to be displayed and edited.
     ///   - isDecimalAllowed: Should the user be allowed to enter a decimal number, or an integer
     ///   - numberFormatter: Custom number formatter used for formatting number in view
-    ///   - toolbarTintColor: Optional tint color for the keyboard dismiss toolbar button (iOS only).
     ///   - onEditingChanged: An action thats called when the user begins editing `text` and after the user finishes editing `text`.
     ///     The closure receives a Boolean indicating whether the text field is currently being edited.
     ///   - onCommit: An action to perform when the user performs an action (for example, when the user hits the return key) while the text field has focus.
@@ -36,7 +34,6 @@ public struct NumericTextField: View {
                 number: Binding<NSNumber?>,
                 isDecimalAllowed: Bool,
                 numberFormatter: NumberFormatter? = nil,
-                toolbarTintColor: Color? = nil,
                 onEditingChanged: @escaping (Bool) -> Void = { _ in },
                 onCommit: @escaping () -> Void = {}
     ) {
@@ -56,7 +53,6 @@ public struct NumericTextField: View {
         self.titleString = "\(titleKey)".replacingOccurrences(of: "LocalizedStringKey(key: \"", with: "").replacingOccurrences(of: "\", hasFormatting: false, arguments: [])", with: "")
         self.onEditingChanged = onEditingChanged
         self.onCommit = onCommit
-        self.toolbarTintColor = toolbarTintColor
     }
 
     public var body: some View {
@@ -65,7 +61,6 @@ public struct NumericTextField: View {
             text: $string,
             placeholder: titleString,
             isDecimalAllowed: isDecimalAllowed,
-            toolbarTintColor: toolbarTintColor,
             onEditingChanged: onEditingChanged,
             onCommit: onCommit
         )
@@ -86,7 +81,6 @@ struct NumericUITextField: UIViewRepresentable {
     @Binding var text: String
     var placeholder: String
     var isDecimalAllowed: Bool
-    var toolbarTintColor: Color?
     var onEditingChanged: (Bool) -> Void
     var onCommit: () -> Void
 
@@ -124,9 +118,8 @@ struct NumericUITextField: UIViewRepresentable {
             action: #selector(Coordinator.dismissKeyboard)
         )
         toolbar.items = [spacer, doneButton]
-        if let tintColor = toolbarTintColor {
-            toolbar.tintColor = UIColor(tintColor)
-        }
+        // Match SwiftUI's .foregroundStyle(.secondary) for keyboard toolbar buttons
+        toolbar.tintColor = .secondaryLabel
         textField.inputAccessoryView = toolbar
 
         return textField
