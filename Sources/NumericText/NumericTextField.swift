@@ -18,6 +18,7 @@ public struct NumericTextField: View {
     private let titleString: String
     private let onEditingChanged: (Bool) -> Void
     private let onCommit: () -> Void
+    private let toolbarTintColor: Color?
 
     /// Creates a text field with a text label generated from a localized title string.
     ///
@@ -34,6 +35,7 @@ public struct NumericTextField: View {
                 number: Binding<NSNumber?>,
                 isDecimalAllowed: Bool,
                 numberFormatter: NumberFormatter? = nil,
+                toolbarTintColor: Color? = nil,
                 onEditingChanged: @escaping (Bool) -> Void = { _ in },
                 onCommit: @escaping () -> Void = {}
     ) {
@@ -51,6 +53,7 @@ public struct NumericTextField: View {
         title = titleKey
         // Mirror the LocalizedStringKey to get a plain string for the placeholder
         self.titleString = "\(titleKey)".replacingOccurrences(of: "LocalizedStringKey(key: \"", with: "").replacingOccurrences(of: "\", hasFormatting: false, arguments: [])", with: "")
+        self.toolbarTintColor = toolbarTintColor
         self.onEditingChanged = onEditingChanged
         self.onCommit = onCommit
     }
@@ -61,6 +64,7 @@ public struct NumericTextField: View {
             text: $string,
             placeholder: titleString,
             isDecimalAllowed: isDecimalAllowed,
+            toolbarTintColor: toolbarTintColor,
             onEditingChanged: onEditingChanged,
             onCommit: onCommit
         )
@@ -81,6 +85,7 @@ struct NumericUITextField: UIViewRepresentable {
     @Binding var text: String
     var placeholder: String
     var isDecimalAllowed: Bool
+    var toolbarTintColor: Color?
     var onEditingChanged: (Bool) -> Void
     var onCommit: () -> Void
 
@@ -116,6 +121,9 @@ struct NumericUITextField: UIViewRepresentable {
             target: context.coordinator,
             action: #selector(Coordinator.dismissKeyboard)
         )
+        if let tintColor = toolbarTintColor {
+            doneButton.tintColor = UIColor(tintColor)
+        }
         toolbar.items = [spacer, doneButton]
         textField.inputAccessoryView = toolbar
 
