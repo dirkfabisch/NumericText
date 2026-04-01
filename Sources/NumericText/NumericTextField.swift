@@ -77,8 +77,6 @@ public struct NumericTextField: View {
 #if os(iOS)
 /// A `UIViewRepresentable` wrapper around `UITextField` that places the cursor
 /// at the end of the text whenever the field becomes the first responder.
-/// Uses a SwiftUI-hosted inputAccessoryView for keyboard dismiss button,
-/// which renders with the native platform styling (e.g. iOS 26 glass effects).
 struct NumericUITextField: UIViewRepresentable {
     @Binding var text: String
     var placeholder: String
@@ -108,32 +106,18 @@ struct NumericUITextField: UIViewRepresentable {
 
         textField.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
 
-        // Use a SwiftUI-hosted view as inputAccessoryView so it renders with
-        // native platform styling (glass effects on iOS 26, standard on older).
-        let dismissAction: () -> Void = {
-            _ = UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        }
-
-        let hostedView: UIView
-        if #available(iOS 15.0, *) {
-            let accessoryView = KeyboardAccessoryView(dismissAction: dismissAction)
-            let hc = UIHostingController(rootView: accessoryView)
-            hc.view.backgroundColor = UIColor.clear
-            if #available(iOS 16.0, *) {
-                hc.sizingOptions = .intrinsicContentSize
-            }
-            hostedView = hc.view
-            context.coordinator.retainedController = hc
-        } else {
-            let accessoryView = KeyboardAccessoryViewLegacy(dismissAction: dismissAction)
-            let hc = UIHostingController(rootView: accessoryView)
-            hc.view.backgroundColor = UIColor.clear
-            hostedView = hc.view
-            context.coordinator.retainedController = hc
-        }
-
-        let container = InputAccessoryContainer(hostedView: hostedView)
-        textField.inputAccessoryView = container
+        // Add a toolbar with a dismiss button as inputAccessoryView
+        let toolbar = UIToolbar()
+        toolbar.sizeToFit()
+        let spacer = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
+        let doneButton = UIBarButtonItem(
+            image: UIImage(systemName: "xmark"),
+            style: .done,
+            target: context.coordinator,
+            action: #selector(Coordinator.dismissKeyboard)
+        )
+        toolbar.items = [spacer, doneButton]
+        textField.inputAccessoryView = toolbar
 
         return textField
     }
@@ -148,7 +132,6 @@ struct NumericUITextField: UIViewRepresentable {
 
     class Coordinator: NSObject, UITextFieldDelegate {
         var parent: NumericUITextField
-        var retainedController: AnyObject?
 
         init(_ parent: NumericUITextField) {
             self.parent = parent
@@ -176,77 +159,10 @@ struct NumericUITextField: UIViewRepresentable {
             textField.resignFirstResponder()
             return true
         }
-    }
-}
 
-// MARK: - SwiftUI Keyboard Accessory
-
-/// A SwiftUI view rendered as the keyboard's inputAccessoryView.
-/// Uses native SwiftUI button styling so it automatically picks up
-/// platform-specific rendering (e.g. iOS 26 glass capsule effects).
-@available(iOS 15.0, *)
-struct KeyboardAccessoryView: View {
-    let dismissAction: () -> Void
-
-    var body: some View {
-        HStack {
-            Spacer()
-            Button(action: dismissAction) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .semibold))
-            }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .tint(.secondary)
-            .padding(.trailing, 8)
-            .padding(.vertical, 6)
+        @objc func dismissKeyboard() {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
-    }
-}
-
-/// Fallback keyboard accessory for iOS 14 using a plain UIToolbar.
-struct KeyboardAccessoryViewLegacy: View {
-    let dismissAction: () -> Void
-
-    var body: some View {
-        HStack {
-            Spacer()
-            Button(action: dismissAction) {
-                Image(systemName: "xmark")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 16, weight: .semibold))
-            }
-            .padding(.trailing, 8)
-            .padding(.vertical, 6)
-        }
-    }
-}
-
-/// A UIView subclass used as inputAccessoryView that hosts a SwiftUI view
-/// and sizes itself based on the hosted content.
-class InputAccessoryContainer: UIView {
-    private let hostedView: UIView
-
-    init(hostedView: UIView) {
-        self.hostedView = hostedView
-        super.init(frame: .zero)
-        autoresizingMask = .flexibleHeight
-        addSubview(hostedView)
-        hostedView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            hostedView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hostedView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            hostedView.topAnchor.constraint(equalTo: topAnchor),
-            hostedView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override var intrinsicContentSize: CGSize {
-        hostedView.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
     }
 }
 #endif
