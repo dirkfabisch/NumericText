@@ -19,6 +19,9 @@ public struct NumericTextField: View {
     private let onEditingChanged: (Bool) -> Void
     private let onCommit: () -> Void
 
+    private let isFocused: Bool
+    private let onFocusChange: ((Bool) -> Void)?
+
     /// Creates a text field with a text label generated from a localized title string.
     ///
     /// - Parameters:
@@ -27,6 +30,8 @@ public struct NumericTextField: View {
     ///   - number: The number to be displayed and edited.
     ///   - isDecimalAllowed: Should the user be allowed to enter a decimal number, or an integer
     ///   - numberFormatter: Custom number formatter used for formatting number in view
+    ///   - isFocused: Whether the field should currently have focus (bridges SwiftUI FocusState)
+    ///   - onFocusChange: Called when the UITextField gains or loses focus
     ///   - onEditingChanged: An action thats called when the user begins editing `text` and after the user finishes editing `text`.
     ///     The closure receives a Boolean indicating whether the text field is currently being edited.
     ///   - onCommit: An action to perform when the user performs an action (for example, when the user hits the return key) while the text field has focus.
@@ -34,6 +39,8 @@ public struct NumericTextField: View {
                 number: Binding<NSNumber?>,
                 isDecimalAllowed: Bool,
                 numberFormatter: NumberFormatter? = nil,
+                isFocused: Bool = false,
+                onFocusChange: ((Bool) -> Void)? = nil,
                 onEditingChanged: @escaping (Bool) -> Void = { _ in },
                 onCommit: @escaping () -> Void = {}
     ) {
@@ -51,6 +58,8 @@ public struct NumericTextField: View {
         title = titleKey
         // Mirror the LocalizedStringKey to get a plain string for the placeholder
         self.titleString = "\(titleKey)".replacingOccurrences(of: "LocalizedStringKey(key: \"", with: "").replacingOccurrences(of: "\", hasFormatting: false, arguments: [])", with: "")
+        self.isFocused = isFocused
+        self.onFocusChange = onFocusChange
         self.onEditingChanged = onEditingChanged
         self.onCommit = onCommit
     }
@@ -61,6 +70,8 @@ public struct NumericTextField: View {
             text: $string,
             placeholder: titleString,
             isDecimalAllowed: isDecimalAllowed,
+            isFocused: isFocused,
+            onFocusChange: onFocusChange,
             onEditingChanged: onEditingChanged,
             onCommit: onCommit
         )
@@ -77,10 +88,14 @@ public struct NumericTextField: View {
 #if os(iOS)
 /// A `UIViewRepresentable` wrapper around `UITextField` that places the cursor
 /// at the end of the text whenever the field becomes the first responder.
+/// Supports two-way focus bridging with SwiftUI's `@FocusState` via
+/// `isFocused` and `onFocusChange`.
 struct NumericUITextField: UIViewRepresentable {
     @Binding var text: String
     var placeholder: String
     var isDecimalAllowed: Bool
+    var isFocused: Bool
+    var onFocusChange: ((Bool) -> Void)?
     var onEditingChanged: (Bool) -> Void
     var onCommit: () -> Void
 
@@ -115,6 +130,18 @@ struct NumericUITextField: UIViewRepresentable {
         if uiView.text != text {
             uiView.text = text
         }
+
+        // Bridge SwiftUI FocusState -> UIKit first responder
+        if isFocused && !uiView.isFirstResponder {
+            // Delay to avoid interfering with SwiftUI's layout pass
+            DispatchQueue.main.async {
+                uiView.becomeFirstResponder()
+            }
+        } else if !isFocused && uiView.isFirstResponder {
+            DispatchQueue.main.async {
+                uiView.resignFirstResponder()
+            }
+        }
     }
 
     class Coordinator: NSObject, UITextFieldDelegate {
@@ -130,6 +157,8 @@ struct NumericUITextField: UIViewRepresentable {
 
         func textFieldDidBeginEditing(_ textField: UITextField) {
             parent.onEditingChanged(true)
+            // Bridge UIKit -> SwiftUI FocusState
+            parent.onFocusChange?(true)
             // Move cursor to end
             DispatchQueue.main.async {
                 let endPosition = textField.endOfDocument
@@ -139,6 +168,8 @@ struct NumericUITextField: UIViewRepresentable {
 
         func textFieldDidEndEditing(_ textField: UITextField) {
             parent.onEditingChanged(false)
+            // Bridge UIKit -> SwiftUI FocusState
+            parent.onFocusChange?(false)
         }
 
         func textFieldShouldReturn(_ textField: UITextField) -> Bool {
