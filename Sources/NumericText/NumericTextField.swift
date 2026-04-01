@@ -19,9 +19,6 @@ public struct NumericTextField: View {
     private let onEditingChanged: (Bool) -> Void
     private let onCommit: () -> Void
 
-    private let isFocused: Bool
-    private let onFocusChange: ((Bool) -> Void)?
-
     /// Creates a text field with a text label generated from a localized title string.
     ///
     /// - Parameters:
@@ -30,8 +27,6 @@ public struct NumericTextField: View {
     ///   - number: The number to be displayed and edited.
     ///   - isDecimalAllowed: Should the user be allowed to enter a decimal number, or an integer
     ///   - numberFormatter: Custom number formatter used for formatting number in view
-    ///   - isFocused: Whether the field should currently have focus (bridges SwiftUI FocusState)
-    ///   - onFocusChange: Called when the UITextField gains or loses focus
     ///   - onEditingChanged: An action thats called when the user begins editing `text` and after the user finishes editing `text`.
     ///     The closure receives a Boolean indicating whether the text field is currently being edited.
     ///   - onCommit: An action to perform when the user performs an action (for example, when the user hits the return key) while the text field has focus.
@@ -39,8 +34,6 @@ public struct NumericTextField: View {
                 number: Binding<NSNumber?>,
                 isDecimalAllowed: Bool,
                 numberFormatter: NumberFormatter? = nil,
-                isFocused: Bool = false,
-                onFocusChange: ((Bool) -> Void)? = nil,
                 onEditingChanged: @escaping (Bool) -> Void = { _ in },
                 onCommit: @escaping () -> Void = {}
     ) {
@@ -58,8 +51,6 @@ public struct NumericTextField: View {
         title = titleKey
         // Mirror the LocalizedStringKey to get a plain string for the placeholder
         self.titleString = "\(titleKey)".replacingOccurrences(of: "LocalizedStringKey(key: \"", with: "").replacingOccurrences(of: "\", hasFormatting: false, arguments: [])", with: "")
-        self.isFocused = isFocused
-        self.onFocusChange = onFocusChange
         self.onEditingChanged = onEditingChanged
         self.onCommit = onCommit
     }
@@ -70,8 +61,6 @@ public struct NumericTextField: View {
             text: $string,
             placeholder: titleString,
             isDecimalAllowed: isDecimalAllowed,
-            isFocused: isFocused,
-            onFocusChange: onFocusChange,
             onEditingChanged: onEditingChanged,
             onCommit: onCommit
         )
@@ -88,14 +77,12 @@ public struct NumericTextField: View {
 #if os(iOS)
 /// A `UIViewRepresentable` wrapper around `UITextField` that places the cursor
 /// at the end of the text whenever the field becomes the first responder.
-/// Supports two-way focus bridging with SwiftUI's `@FocusState` via
-/// `isFocused` and `onFocusChange`.
+/// Uses a SwiftUI-hosted inputAccessoryView for keyboard dismiss button,
+/// which renders with the native platform styling (e.g. iOS 26 glass effects).
 struct NumericUITextField: UIViewRepresentable {
     @Binding var text: String
     var placeholder: String
     var isDecimalAllowed: Bool
-    var isFocused: Bool
-    var onFocusChange: ((Bool) -> Void)?
     var onEditingChanged: (Bool) -> Void
     var onCommit: () -> Void
 
@@ -121,6 +108,33 @@ struct NumericUITextField: UIViewRepresentable {
 
         textField.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
 
+        // Use a SwiftUI-hosted view as inputAccessoryView so it renders with
+        // native platform styling (glass effects on iOS 26, standard on older).
+        let dismissAction: () -> Void = {
+            _ = UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+
+        let hostedView: UIView
+        if #available(iOS 15.0, *) {
+            let accessoryView = KeyboardAccessoryView(dismissAction: dismissAction)
+            let hc = UIHostingController(rootView: accessoryView)
+            hc.view.backgroundColor = UIColor.clear
+            if #available(iOS 16.0, *) {
+                hc.sizingOptions = .intrinsicContentSize
+            }
+            hostedView = hc.view
+            context.coordinator.retainedController = hc
+        } else {
+            let accessoryView = KeyboardAccessoryViewLegacy(dismissAction: dismissAction)
+            let hc = UIHostingController(rootView: accessoryView)
+            hc.view.backgroundColor = UIColor.clear
+            hostedView = hc.view
+            context.coordinator.retainedController = hc
+        }
+
+        let container = InputAccessoryContainer(hostedView: hostedView)
+        textField.inputAccessoryView = container
+
         return textField
     }
 
@@ -130,22 +144,11 @@ struct NumericUITextField: UIViewRepresentable {
         if uiView.text != text {
             uiView.text = text
         }
-
-        // Bridge SwiftUI FocusState -> UIKit first responder
-        if isFocused && !uiView.isFirstResponder {
-            // Delay to avoid interfering with SwiftUI's layout pass
-            DispatchQueue.main.async {
-                uiView.becomeFirstResponder()
-            }
-        } else if !isFocused && uiView.isFirstResponder {
-            DispatchQueue.main.async {
-                uiView.resignFirstResponder()
-            }
-        }
     }
 
     class Coordinator: NSObject, UITextFieldDelegate {
         var parent: NumericUITextField
+        var retainedController: AnyObject?
 
         init(_ parent: NumericUITextField) {
             self.parent = parent
@@ -157,8 +160,6 @@ struct NumericUITextField: UIViewRepresentable {
 
         func textFieldDidBeginEditing(_ textField: UITextField) {
             parent.onEditingChanged(true)
-            // Bridge UIKit -> SwiftUI FocusState
-            parent.onFocusChange?(true)
             // Move cursor to end
             DispatchQueue.main.async {
                 let endPosition = textField.endOfDocument
@@ -168,8 +169,6 @@ struct NumericUITextField: UIViewRepresentable {
 
         func textFieldDidEndEditing(_ textField: UITextField) {
             parent.onEditingChanged(false)
-            // Bridge UIKit -> SwiftUI FocusState
-            parent.onFocusChange?(false)
         }
 
         func textFieldShouldReturn(_ textField: UITextField) -> Bool {
@@ -177,6 +176,77 @@ struct NumericUITextField: UIViewRepresentable {
             textField.resignFirstResponder()
             return true
         }
+    }
+}
+
+// MARK: - SwiftUI Keyboard Accessory
+
+/// A SwiftUI view rendered as the keyboard's inputAccessoryView.
+/// Uses native SwiftUI button styling so it automatically picks up
+/// platform-specific rendering (e.g. iOS 26 glass capsule effects).
+@available(iOS 15.0, *)
+struct KeyboardAccessoryView: View {
+    let dismissAction: () -> Void
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Button(action: dismissAction) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .tint(.secondary)
+            .padding(.trailing, 8)
+            .padding(.vertical, 6)
+        }
+    }
+}
+
+/// Fallback keyboard accessory for iOS 14 using a plain UIToolbar.
+struct KeyboardAccessoryViewLegacy: View {
+    let dismissAction: () -> Void
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Button(action: dismissAction) {
+                Image(systemName: "xmark")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .padding(.trailing, 8)
+            .padding(.vertical, 6)
+        }
+    }
+}
+
+/// A UIView subclass used as inputAccessoryView that hosts a SwiftUI view
+/// and sizes itself based on the hosted content.
+class InputAccessoryContainer: UIView {
+    private let hostedView: UIView
+
+    init(hostedView: UIView) {
+        self.hostedView = hostedView
+        super.init(frame: .zero)
+        autoresizingMask = .flexibleHeight
+        addSubview(hostedView)
+        hostedView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            hostedView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hostedView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hostedView.topAnchor.constraint(equalTo: topAnchor),
+            hostedView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: CGSize {
+        hostedView.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
     }
 }
 #endif
