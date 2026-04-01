@@ -106,22 +106,6 @@ struct NumericUITextField: UIViewRepresentable {
 
         textField.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
 
-        // Add a toolbar with a dismiss button as inputAccessoryView,
-        // since SwiftUI's .toolbar(.keyboard) doesn't reach UIViewRepresentable fields.
-        let toolbar = UIToolbar()
-        toolbar.sizeToFit()
-        let spacer = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-        let doneButton = UIBarButtonItem(
-            image: UIImage(systemName: "xmark"),
-            style: .done,
-            target: context.coordinator,
-            action: #selector(Coordinator.dismissKeyboard)
-        )
-        toolbar.items = [spacer, doneButton]
-        // Match SwiftUI's ToolbarItemGroup(placement: .keyboard) button style
-        doneButton.tintColor = .label.withAlphaComponent(0.35)
-        textField.inputAccessoryView = toolbar
-
         return textField
     }
 
@@ -161,10 +145,6 @@ struct NumericUITextField: UIViewRepresentable {
             parent.onCommit()
             textField.resignFirstResponder()
             return true
-        }
-
-        @objc func dismissKeyboard() {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
     }
 }
