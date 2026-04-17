@@ -37,6 +37,14 @@ public struct NumericTextModifier: ViewModifier {
                 number = numberFormatter.number(from: numeric)
             }
             .onChangeShimmed(of: number, perform: { newValue in
+                // Guard against round-trip corruption of intermediate typing state.
+                // When the user types a decimal separator ("5,"), the text→number step
+                // parses to an integer, which would fire this handler and reformat
+                // back to "5" — wiping the separator before the fractional digit lands.
+                // Skip the text update when the current text already parses to the same number.
+                if numberFormatter.number(from: text) == newValue {
+                    return
+                }
                 if let number = newValue {
                     text = numberFormatter.string(from: number) ?? ""
                 } else {
